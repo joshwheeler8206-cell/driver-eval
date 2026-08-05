@@ -1,4 +1,4 @@
-const CACHE = 'driver-eval-v1';
+const CACHE = 'driver-eval-v2';
 const ASSETS = [
   './',
   './index.html',

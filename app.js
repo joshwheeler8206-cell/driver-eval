@@ -402,6 +402,7 @@ function renderRecords() {
       ]),
       el('div', { class: 'rec-actions' }, [
         el('button', { class: 'btn ghost small', onclick: () => loadEval(r.id) }, ['Open']),
+        el('button', { class: 'btn ghost small primary-outline', onclick: () => openPrint(r) }, ['Print / PDF']),
         el('button', { class: 'btn ghost small', onclick: () => exportOne(r) }, ['Export']),
         el('button', { class: 'btn ghost small danger', onclick: () => deleteEval(r.id) }, ['Delete']),
       ]),
@@ -444,6 +445,89 @@ function download(filename, text) {
   const a = el('a', { href: url, download: filename });
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+function esc(s) {
+  return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function reportHtml(r, mode) {
+  const sigImg = (data) => (data ? '<div class="sigbox"><img src="' + data + '" alt="signature"></div>' : '<div class="sigbox ns">(unsigned)</div>');
+  const cell = (val) => (val === 'NI' ? 'NI' : val === 'SAT' ? 'SAT' : '');
+  let areas = '';
+  for (const a of CHECKLIST) {
+    const rows = a.items.map((it) => {
+      const v = r.areas[a.id].items[it];
+      return '<tr class="' + (v === 'NI' ? 'ni' : '') + '"><td class="it">' + esc(it) + '</td>' +
+        '<td class="mark on">' + (v === 'SAT' ? '\u2611' : '\u2610') + '</td>' +
+        '<td class="mark2">SAT</td>' +
+        '<td class="mark on">' + (v === 'NI' ? '\u2611' : '\u2610') + '</td>' +
+        '<td class="mark2">NI</td></tr>';
+    }).join('');
+    const notes = r.areas[a.id].notes;
+    areas += '<section class="area"><h3>' + a.num + '. ' + esc(a.title) + '</h3>' +
+      '<table>' + rows + '</table>' +
+      (notes ? '<p class="notes"><strong>Notes:</strong> ' + esc(notes) + '</p>' : '') +
+      '</section>';
+  }
+  const title = mode === 'quarter' ? 'Quarterly Driver Evaluation Summary' : 'Quarterly Driver Evaluation';
+  return '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + title + '</title>' +
+    '<style>' +
+    '@page { size: Letter; margin: 14mm 12mm; }' +
+    '* { box-sizing: border-box; }' +
+    'body { font-family: Arial, Helvetica, sans-serif; color: #111; margin: 0; font-size: 12px; }' +
+    '.head { text-align: center; margin-bottom: 14px; }' +
+    '.head h1 { font-size: 20px; margin: 0 0 2px; letter-spacing: .5px; }' +
+    '.head p { margin: 0; font-size: 11px; color: #444; }' +
+    'table.meta { width: 100%; border-collapse: collapse; margin-bottom: 14px; }' +
+    'table.meta td { border: 1px solid #333; padding: 6px 8px; font-size: 12px; }' +
+    'table.meta .lbl { font-weight: 700; width: 22%; background: #eef; }' +
+    '.area { page-break-inside: avoid; margin-bottom: 12px; border: 1px solid #333; }' +
+    '.area h3 { margin: 0; padding: 6px 8px; background: #dde7f7; border-bottom: 1px solid #333; font-size: 13px; }' +
+    'table { width: 100%; border-collapse: collapse; }' +
+    'td { padding: 4px 8px; font-size: 12px; }' +
+    'tr + tr td, tr + tr { border-top: 1px solid #ccc; }' +
+    'td.it { width: 70%; }' +
+    'td.mark { width: 3.5%; text-align: center; font-size: 15px; }' +
+    'td.mark2 { width: 11.5%; font-size: 10px; color: #555; font-weight: 700; }' +
+    'tr.ni td { background: #fff0f0; }' +
+    '.notes { margin: 6px 8px; font-size: 12px; }' +
+    '.overall { margin: 14px 0; border: 1px solid #333; }' +
+    '.overall h3 { margin: 0; padding: 6px 8px; background: #dde7f7; border-bottom: 1px solid #333; font-size: 13px; }' +
+    '.overall p { margin: 0; padding: 10px 8px; min-height: 40px; }' +
+    '.sigs { width: 100%; border-collapse: collapse; margin-top: 14px; }' +
+    '.sigs td { width: 33.3%; vertical-align: top; padding: 6px; }' +
+    '.sigbox { height: 56px; display: flex; align-items: flex-end; justify-content: flex-start; }' +
+    '.sigbox img { max-height: 52px; max-width: 100%; }' +
+    '.sigbox.ns { color: #999; font-size: 11px; align-items: center; }' +
+    '.sigline { border-top: 1px solid #333; margin-top: 4px; font-size: 10px; color: #444; }' +
+    '.foot { margin-top: 16px; font-size: 9.5px; color: #555; border-top: 1px solid #aaa; padding-top: 5px; }' +
+    '@media print { .noprint { display: none; } }' +
+    '</style></head><body>' +
+    '<div class="head"><h1>' + title + '</h1><p>U.S. AutoForce &bull; Confidential &bull; SAT = Satisfactory | NI = Needs Improvement</p></div>' +
+    '<table class="meta"><tr>' +
+    '<td class="lbl">DRIVER NAME</td><td>' + esc(r.driverName) + '</td>' +
+    '<td class="lbl">DRIVER ID#</td><td>' + esc(r.driverId) + '</td></tr><tr>' +
+    '<td class="lbl">EVALUATION DATE</td><td>' + esc(r.evalDate) + '</td>' +
+    '<td class="lbl">ASSESSOR / TRAINER</td><td>' + esc(r.assessor) + '</td></tr></table>' +
+    areas +
+    '<div class="overall"><h3>Overall Performance Notes / Coaching Points</h3><p>' + (r.overallNotes ? esc(r.overallNotes) : '&nbsp;') + '</p></div>' +
+    '<table class="sigs"><tr>' +
+    '<td><div class="sigbox">' + sigImg(r.driverSig) + '</div><div class="sigline">DRIVER SIGNATURE</div></td>' +
+    '<td><div class="sigbox">' + sigImg(r.assessorSig) + '</div><div class="sigline">ASSESSOR SIGNATURE</div></td>' +
+    '<td><div class="sigbox"><span style="line-height:52px">' + esc(r.sigDate || r.evalDate || '') + '</span></div><div class="sigline">DATE</div></td>' +
+    '</tr></table>' +
+    '<div class="foot">U.S. AutoForce &bull; Quarterly Driver Evaluation &bull; Confidential &bull; SAT = Satisfactory | NI = Needs Improvement &bull; Elite GPS for every stop &bull; App pictures show hood open for fluids</div>' +
+    '<div class="noprint" style="text-align:center; margin-top:20px"><button onclick="window.print()" style="font-size:16px;padding:10px 24px">Print / Save as PDF</button></div>' +
+    '</body></html>';
+}
+
+function openPrint(r) {
+  const w = window.open('', '_blank');
+  if (!w) { toast('Popup blocked. Allow popups for this site.'); return; }
+  w.document.open();
+  w.document.write(reportHtml(r, 'eval'));
+  w.document.close();
 }
 
 /* ============================== Render: Quarterly ============================== */
@@ -520,13 +604,71 @@ function renderQuarterlyFor(key, body) {
   }
   body.appendChild(card);
 
-  body.appendChild(el('button', { class: 'btn primary', onclick: () => exportQuarter(key) }, ['Export Quarter (JSON)']));
+  body.appendChild(el('div', { class: 'actions', style: 'grid-template-columns:1fr 1fr; margin-top:12px' }, [
+    el('button', { class: 'btn primary', onclick: () => printQuarter(key) }, ['Print Quarter (PDF)']),
+    el('button', { class: 'btn ghost', onclick: () => exportQuarter(key) }, ['Export (JSON)']),
+  ]));
 }
 
 function exportQuarter(key) {
   const q = records.filter((r) => quarterKey(r.evalDate) === key);
   if (!q.length) { toast('Nothing in this quarter.'); return; }
   download('evaluations-' + key + '.json', JSON.stringify({ quarter: key, evaluations: q }, null, 2));
+}
+
+function printQuarter(key) {
+  const q = records.filter((r) => quarterKey(r.evalDate) === key);
+  if (!q.length) { toast('Nothing in this quarter.'); return; }
+
+  const byDriver = new Map();
+  for (const r of q) {
+    if (!byDriver.has(r.driverName)) byDriver.set(r.driverName, { evals: [], ni: new Map() });
+    const d = byDriver.get(r.driverName);
+    d.evals.push(r);
+    for (const a of CHECKLIST) for (const it of a.items) {
+      if (r.areas[a.id].items[it] === 'NI') d.ni.set(it, (d.ni.get(it) || 0) + 1);
+    }
+  }
+
+  const rows = [];
+  for (const [driver, d] of [...byDriver.entries()].sort()) {
+    rows.push('<section class="area"><h3>' + esc(driver) + ' &mdash; ' + d.evals.length + ' evaluation(s)</h3><table>');
+    const niItems = [...d.ni.entries()].sort((a, b) => b[1] - a[1]);
+    if (niItems.length) {
+      for (const [item, n] of niItems) {
+        rows.push('<tr class="ni"><td class="it">' + esc(item) + '</td><td class="mark2" style="width:auto">Needs Improvement &times; ' + n + '</td></tr>');
+      }
+    } else {
+      rows.push('<tr><td class="it">No Needs Improvement items recorded</td><td class="mark2" style="width:auto;color:#167a2e">OK</td></tr>');
+    }
+    rows.push('</table></section>');
+  }
+
+  const html = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Quarterly Summary ' + esc(key) + '</title><style>' +
+    '@page { size: Letter; margin: 14mm 12mm; }' +
+    'body { font-family: Arial, Helvetica, sans-serif; font-size: 12px; color: #111; }' +
+    '.head { text-align: center; margin-bottom: 14px; }' +
+    '.head h1 { font-size: 20px; margin: 0 0 2px; }' +
+    '.head p { margin: 0; font-size: 11px; color: #444; }' +
+    '.area { page-break-inside: avoid; margin-bottom: 12px; border: 1px solid #333; }' +
+    '.area h3 { margin: 0; padding: 6px 8px; background: #dde7f7; border-bottom: 1px solid #333; font-size: 13px; }' +
+    'table { width: 100%; border-collapse: collapse; }' +
+    'td { padding: 4px 8px; font-size: 12px; }' +
+    'tr + tr td, tr + tr { border-top: 1px solid #ccc; }' +
+    'tr.ni td { background: #fff0f0; }' +
+    'td.it { width: 70%; }' +
+    '.foot { margin-top: 16px; font-size: 9.5px; color: #555; border-top: 1px solid #aaa; padding-top: 5px; }' +
+    '</style></head><body>' +
+    '<div class="head"><h1>Quarterly Driver Evaluation Summary</h1><p>' + esc(key) + ' &bull; U.S. AutoForce &bull; Confidential</p></div>' +
+    rows.join('') +
+    '<div class="foot">Needs Improvement items flagged during ' + esc(key) + ' ride-alongs. Use as coaching focus areas.</div>' +
+    '</body></html>';
+
+  const w = window.open('', '_blank');
+  if (!w) { toast('Popup blocked. Allow popups for this site.'); return; }
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
 }
 
 /* ============================== Navigation ============================== */
