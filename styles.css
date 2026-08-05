@@ -301,3 +301,33 @@ textarea.overall { min-height: 110px; }
   text-align: center;
 }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --blue: #60a5fa;
+    --blue-dark: #93c5fd;
+    --blue-soft: #1e3a8a;
+    --green: #4ade80;
+    --green-soft: #052e16;
+    --red: #f87171;
+    --red-soft: #450a0a;
+    --ink: #f3f4f6;
+    --muted: #9ca3af;
+    --line: #1f2937;
+    --bg: #0b1220;
+    --card: #111827;
+  }
+  input, select, textarea { background: #0b1220; }
+  .btn { background: #1f2937; }
+  .item { border-bottom-color: #1f2937; }
+  .rate { background: #0b1220; }
+  .sigpad { background: #0b1220; }
+  .tabbar { background: #0b1220; }
+  .qsel-select, .sc-sel select { background: #0b1220; }
+  .info-card { background: #1e3a8a; border-color: #1e40af; }
+  .sc-cat-n.warn { color: #fbbf24; }
+  svg line { stroke: #1f2937 !important; }
+  svg text { fill: #9ca3af !important; }
+  svg circle { fill: var(--blue) !important; }
+  svg polyline { stroke: var(--blue) !important; }
+}
