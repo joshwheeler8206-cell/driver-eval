@@ -1,7 +1,7 @@
 {
-  "name": "U.S. AutoForce Quarterly Driver Evaluation",
-  "short_name": "Driver Eval",
-  "description": "Mobile form for quarterly driver ride-along evaluations.",
+  "name": "U.S. AutoForce Quarterly Review",
+  "short_name": "Quarterly",
+  "description": "Mobile form for quarterly driver ride-along reviews.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
