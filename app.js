@@ -98,11 +98,50 @@ const STORE_KEY = 'usaf_driver_evals_v1';
 
 /* ============================== State ============================== */
 
-let records = loadRecords();
+let records = [];
 let current = null; // evaluation object being edited
 let activeView = 'evaluate';
 
-/* ============================== Storage ============================== */
+/* ============================== Storage (IndexedDB + fallback) ============================== */
+
+const DB_NAME = 'usaf_driver_evals_db';
+const canIdb = typeof indexedDB !== 'undefined';
+let dbReady = idbOpen();
+let _writeQueue = Promise.resolve();
+
+function idbOpen() {
+  return new Promise((resolve, reject) => {
+    try {
+      const req = indexedDB.open(DB_NAME, 1);
+      req.onupgradeneeded = () => req.result.createObjectStore('kv');
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    } catch (e) { reject(e); }
+  });
+}
+
+async function idbGet(key) {
+  try {
+    const db = await dbReady;
+    return await new Promise((resolve) => {
+      const req = db.transaction('kv', 'readonly').objectStore('kv').get(key);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => resolve(null);
+    });
+  } catch (e) { return null; }
+}
+
+async function idbSet(key, value) {
+  try {
+    const db = await dbReady;
+    return await new Promise((resolve) => {
+      const tx = db.transaction('kv', 'readwrite');
+      tx.objectStore('kv').put(value, key);
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+    });
+  } catch (e) { return false; }
+}
 
 function loadRecords() {
   try {
@@ -112,11 +151,26 @@ function loadRecords() {
   }
 }
 
+// Writes are serialized so a slow save can't overwrite a newer one.
 function persist() {
+  const snapshot = JSON.parse(JSON.stringify(records));
+  if (canIdb) {
+    _writeQueue = _writeQueue.then(() => idbSet(STORE_KEY, snapshot)).catch(() => {});
+    return _writeQueue;
+  }
   try {
-    localStorage.setItem(STORE_KEY, JSON.stringify(records));
+    localStorage.setItem(STORE_KEY, JSON.stringify(snapshot));
   } catch (e) {
     toast('Storage is full. Try exporting and deleting old records.');
+  }
+  return Promise.resolve();
+}
+
+async function initStorage() {
+  records = canIdb ? (await idbGet(STORE_KEY)) || [] : loadRecords();
+  if (canIdb && !records.length) {
+    const legacy = loadRecords();
+    if (legacy.length) { records = legacy; await persist(); }
   }
 }
 
@@ -701,5 +755,7 @@ window.addEventListener('beforeunload', () => {
   }
 });
 
-renderEvaluate();
-registerSW();
+initStorage().then(() => {
+  renderEvaluate();
+  registerSW();
+});
