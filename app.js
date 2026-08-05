@@ -725,6 +725,190 @@ function printQuarter(key) {
   w.document.close();
 }
 
+/* ============================== Render: Scorecard / Trends ============================== */
+
+function driverStats(name) {
+  const evals = records.filter((r) => r.driverName === name);
+  const perArea = {};
+  const ni = new Map();
+  let sat = 0, rated = 0;
+  for (const r of evals) {
+    for (const a of CHECKLIST) {
+      if (!perArea[a.id]) perArea[a.id] = { sat: 0, rated: 0 };
+      for (const it of a.items) {
+        const v = r.areas[a.id] && r.areas[a.id].items[it];
+        if (v === 'SAT') { sat++; rated++; perArea[a.id].sat++; perArea[a.id].rated++; }
+        else if (v === 'NI') { rated++; perArea[a.id].rated++; ni.set(it, (ni.get(it) || 0) + 1); }
+      }
+    }
+  }
+  return { evals, sat, rated, pct: rated ? Math.round((sat / rated) * 100) : null, ni, perArea };
+}
+
+function quarterSeries(name) {
+  const byQ = new Map();
+  for (const r of records) {
+    if (r.driverName !== name) continue;
+    const q = quarterKey(r.evalDate);
+    if (!byQ.has(q)) byQ.set(q, { sat: 0, rated: 0 });
+    for (const a of CHECKLIST) {
+      for (const it of a.items) {
+        const v = r.areas[a.id] && r.areas[a.id].items[it];
+        if (v === 'SAT') { byQ.get(q).sat++; byQ.get(q).rated++; }
+        else if (v === 'NI') byQ.get(q).rated++;
+      }
+    }
+  }
+  return [...byQ.entries()].sort().map(([q, d]) => ({ q, pct: d.rated ? Math.round((d.sat / d.rated) * 100) : null, rated: d.rated }));
+}
+
+function qShort(key) {
+  const [y, q] = key.split('-');
+  return String(y).slice(2) + ' Q' + q;
+}
+
+function trendSvg(series) {
+  const W = 320, H = 130, padL = 26, padR = 8, padT = 10, padB = 22;
+  const iw = W - padL - padR, ih = H - padT - padB;
+  const n = series.length;
+  const x = (i) => padL + (n === 1 ? iw / 2 : (iw * i) / (n - 1));
+  const y = (pct) => padT + ih - (pct / 100) * ih;
+  let grid = '';
+  for (const g of [0, 50, 100]) grid += '<line x1="' + padL + '" y1="' + y(g).toFixed(1) + '" x2="' + (W - padR) + '" y2="' + y(g).toFixed(1) + '" stroke="#e5e7eb" stroke-width="1"/>';
+  const pts = series.map((s, i) => x(i).toFixed(1) + ',' + y(s.pct).toFixed(1));
+  let extras = '';
+  series.forEach((s, i) => {
+    const cx = x(i).toFixed(1), cy = y(s.pct).toFixed(1);
+    extras += '<circle cx="' + cx + '" cy="' + cy + '" r="3.2" fill="#1d4ed8"/>' +
+      '<text x="' + cx + '" y="' + (H - 8) + '" text-anchor="middle" font-size="10" fill="#6b7280">' + esc(qShort(s.q)) + '</text>';
+  });
+  return '<svg viewBox="0 0 ' + W + ' ' + H + '" xmlns="http://www.w3.org/2000/svg">' + grid +
+    '<polyline points="' + pts.join(' ') + '" fill="none" stroke="#1d4ed8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>' +
+    extras + '</svg>';
+}
+
+function renderTrends() {
+  const view = document.getElementById('view');
+  view.innerHTML = '';
+  const drivers = [...new Set(records.map((r) => r.driverName).filter(Boolean))].sort();
+  view.appendChild(el('div', { class: 'page-head' }, [el('h2', { class: 'page-title' }, ['Driver Scorecard & Trends'])]));
+  if (!drivers.length) {
+    view.appendChild(el('div', { class: 'empty' }, ['No evaluations yet. Complete ride-alongs to build scorecards.']));
+    return;
+  }
+  const selWrap = el('div', { class: 'sc-sel' });
+  const sel = el('select', { onchange: (e) => renderScorecardFor(e.target.value) });
+  for (const d of drivers) sel.appendChild(el('option', { value: d }, [d]));
+  selWrap.appendChild(sel);
+  view.appendChild(selWrap);
+  const body = el('div');
+  view.appendChild(body);
+  renderScorecardFor(drivers[0], body);
+}
+
+function renderScorecardFor(name, body) {
+  if (!body) body = document.getElementById('view').lastChild;
+  body.innerHTML = '';
+  const st = driverStats(name);
+  if (!st.rated) {
+    body.appendChild(el('div', { class: 'empty' }, ['No rated items for this driver yet.']));
+    return;
+  }
+
+  body.appendChild(el('div', { class: 'sc-summary' }, [
+    el('div', { class: 'sc-stat' }, [el('strong', {}, [st.pct + '%']), el('span', {}, ['SAT overall'])]),
+    el('div', { class: 'sc-stat' }, [el('strong', {}, [String(st.evals.length)]), el('span', {}, ['evaluations'])]),
+    el('div', { class: 'sc-stat' }, [el('strong', {}, [String(st.ni.size)]), el('span', {}, ['distinct NI items'])]),
+  ]));
+
+  const series = quarterSeries(name);
+  body.appendChild(el('div', { class: 'sc-card sc-chart' }, [
+    el('h3', {}, ['SAT % by Quarter']),
+    el('div', { html: trendSvg(series) }),
+    el('div', { class: 'sc-chart-note' }, ['Share of items rated Satisfactory per ride-along quarter.']),
+  ]));
+
+  const catCard = el('div', { class: 'sc-card' }, [el('h3', {}, ['Category Breakdown (SAT %)'])]);
+  let minPct = 101, minArea = null;
+  for (const a of CHECKLIST) {
+    const p = st.perArea[a.id];
+    if (!p || !p.rated) continue;
+    const pct = Math.round((p.sat / p.rated) * 100);
+    if (pct < minPct) { minPct = pct; minArea = a.title; }
+    const cls = pct < 70 ? 'bad' : pct < 85 ? 'warn' : '';
+    catCard.appendChild(el('div', { class: 'sc-cat' }, [
+      el('div', { class: 'sc-cat-head' }, [
+        el('span', {}, [a.num + '. ' + a.title]),
+        el('span', { class: 'sc-cat-n ' + (cls || '') }, [pct + '%']),
+      ]),
+      el('div', { class: 'sc-cat-bar' }, [el('div', { class: 'sc-cat-fill ' + (cls || ''), style: 'width:' + pct + '%' })]),
+    ]));
+  }
+  body.appendChild(catCard);
+
+  const focus = el('div', { class: 'sc-card' }, [el('h3', {}, ['Coaching Focus for Next Ride-Along'])]);
+  const sorted = [...st.ni.entries()].sort((a, b) => b[1] - a[1]);
+  if (!sorted.length) {
+    focus.appendChild(el('div', { class: 'sc-clean' }, ['No NI items flagged — keep doing what you are doing.']));
+  } else {
+    focus.appendChild(el('ul', { class: 'sc-focus' }, sorted.map(([item, n]) => el('li', {}, [item, el('span', { class: 'n' }, [n + 'x'])]))));
+  }
+  body.appendChild(focus);
+
+  if (minArea && minPct < 85) {
+    body.appendChild(el('div', { class: 'card', style: 'border-left:4px solid var(--red)' }, [
+      el('strong', {}, ['Lowest category: ' + minArea]),
+      el('div', { class: 'sc-chart-note' }, [minPct + '% SAT — make this the focus of the next ride-along.']),
+    ]));
+  }
+
+  body.appendChild(el('button', { class: 'btn primary big', style: 'width:100%', onclick: () => openScorecardPrint(name) }, ['🖨️ Print / Save PDF']));
+}
+
+function openScorecardPrint(name) {
+  const st = driverStats(name);
+  const series = quarterSeries(name);
+  let catRows = '';
+  for (const a of CHECKLIST) {
+    const p = st.perArea[a.id];
+    if (!p || !p.rated) continue;
+    const pct = Math.round((p.sat / p.rated) * 100);
+    catRows += '<tr><td>' + a.num + '. ' + esc(a.title) + '</td><td>' + pct + '%</td><td>' + p.sat + '/' + p.rated + '</td></tr>';
+  }
+  const focusItems = [...st.ni.entries()].sort((a, b) => b[1] - a[1]);
+  const focusRows = focusItems.length
+    ? focusItems.map(([it, n]) => '<tr><td>' + esc(it) + '</td><td>' + n + '</td></tr>').join('')
+    : '<tr><td colspan="2">No Needs Improvement items flagged.</td></tr>';
+  const trendRows = series.length
+    ? series.map((s) => '<tr><td>' + qShort(s.q) + '</td><td>' + s.pct + '%</td><td>' + s.rated + ' rated</td></tr>').join('')
+    : '<tr><td colspan="3">No rated data.</td></tr>';
+
+  const html = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Scorecard ' + esc(name) + '</title><style>' +
+    'body{font-family:Arial,Helvetica,sans-serif;margin:24px;color:#111}' +
+    'h1{margin:0;font-size:22px}.sub{color:#555;font-size:12px;margin:4px 0 18px}' +
+    'h2{font-size:14px;margin:20px 0 8px;border-bottom:1px solid #ccc;padding-bottom:3px}' +
+    'table{width:100%;border-collapse:collapse;font-size:12px}' +
+    'th,td{border:1px solid #999;padding:6px 8px;text-align:left}' +
+    'th{background:#eee}' +
+    '.big{font-size:20px;font-weight:700;color:#1d4ed8}' +
+    '.foot{margin-top:30px;display:flex;gap:60px}' +
+    '.sig{width:230px;border-top:1px solid #333;padding-top:4px;font-size:11px}' +
+    '</style></head><body>' +
+    '<h1>Driver Scorecard</h1>' +
+    '<div class="sub">' + esc(name) + ' &bull; Overall SAT ' + st.pct + '% &bull; ' + st.evals.length + ' evaluation(s), ' + st.rated + ' rated items &bull; Generated for next ride-along</div>' +
+    '<h2>SAT % Trend by Quarter</h2><table><tr><th>Quarter</th><th>SAT %</th><th>Rated</th></tr>' + trendRows + '</table>' +
+    '<h2>Category Breakdown</h2><table><tr><th>Category</th><th>SAT %</th><th>SAT/Rated</th></tr>' + catRows + '</table>' +
+    '<h2>Coaching Focus Items</h2><table><tr><th>Item</th><th>Times Flagged</th></tr>' + focusRows + '</table>' +
+    '<div class="foot"><div class="sig">Assessor / Trainer Signature</div><div class="sig">Date</div></div>' +
+    '</body></html>';
+
+  const w = window.open('', '_blank');
+  if (!w) { toast('Popup blocked. Allow popups for this site.'); return; }
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
+}
+
 /* ============================== Navigation ============================== */
 
 function switchView(name) {
@@ -732,6 +916,7 @@ function switchView(name) {
   document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.dataset.view === name));
   if (name === 'evaluate') renderEvaluate();
   else if (name === 'records') renderRecords();
+  else if (name === 'trends') renderTrends();
   else renderQuarterly();
 }
 
