@@ -1,4 +1,5 @@
 # U.S. AutoForce Quarterly Driver Evaluation
+<p align="center"><img src="icons/logo-tile.png" alt="U.S. AutoForce" width="340"></p>
 Mobile PWA for ride-along assessments. Open via GitHub Pages and install to home screen.
 
 ## Install
