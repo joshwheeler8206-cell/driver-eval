@@ -56,6 +56,7 @@ const CHECKLIST = [
     items: [
       'First and last name entered correctly',
       'Clear, accurate pictures taken & uploaded',
+      'GPS used for every stop (Elite GPS)',
     ],
   },
   {
@@ -68,16 +69,8 @@ const CHECKLIST = [
     ],
   },
   {
-    id: 'gps',
-    num: '6',
-    title: 'GPS Usage',
-    items: [
-      'GPS used for every stop (Elite GPS)',
-    ],
-  },
-  {
     id: 'post-trip',
-    num: '7',
+    num: '6',
     title: 'Post-Trip Inspection',
     items: [
       'Horn',
