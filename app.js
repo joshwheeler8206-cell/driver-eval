@@ -174,6 +174,101 @@ async function initStorage() {
   }
 }
 
+/* ============================== Driver Roster (shared) ============================== */
+// usaf_roster_db / usaf_roster_v1 — the SAME IndexedDB all six AutoForce apps read,
+// so a driver profile added in the Driver Hub autofills here too.
+const ROSTER_DB = 'usaf_roster_db';
+const ROSTER_KEY = 'usaf_roster_v1';
+let roster = [];
+
+function rosterOpen() {
+  return new Promise((resolve, reject) => {
+    try {
+      const req = indexedDB.open(ROSTER_DB, 1);
+      req.onupgradeneeded = () => req.result.createObjectStore('kv');
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    } catch (e) { reject(e); }
+  });
+}
+
+async function rosterGet() {
+  try {
+    const db = await rosterOpen();
+    return await new Promise((resolve) => {
+      const req = db.transaction('kv', 'readonly').objectStore('kv').get(ROSTER_KEY);
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => resolve([]);
+    });
+  } catch (e) { return []; }
+}
+
+function rosterPut(list) {
+  const snapshot = JSON.parse(JSON.stringify(list));
+  if (canIdb) {
+    return rosterOpen().then((db) => new Promise((resolve) => {
+      const tx = db.transaction('kv', 'readwrite');
+      tx.objectStore('kv').put(snapshot, ROSTER_KEY);
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+    })).catch(() => {});
+  }
+  try { localStorage.setItem(ROSTER_DB + ':' + ROSTER_KEY, JSON.stringify(snapshot)); } catch (e) {}
+  return Promise.resolve();
+}
+
+function rosterFind(name) {
+  const n = String(name || '').trim().toLowerCase();
+  return roster.find((r) => String(r.name || '').trim().toLowerCase() === n) || null;
+}
+
+function rosterUpsert(entry) {
+  const name = String((entry && entry.name) || '').trim();
+  if (!name) return;
+  const existing = rosterFind(name);
+  if (existing) {
+    for (const k of ['license', 'warehouse', 'hireDate', 'trainer']) {
+      const v = String((entry && entry[k]) || '').trim();
+      if (v) existing[k] = v;
+    }
+  } else {
+    roster.push({
+      name,
+      license: String((entry && entry.license) || '').trim(),
+      warehouse: String((entry && entry.warehouse) || '').trim(),
+      hireDate: String((entry && entry.hireDate) || '').trim(),
+      trainer: String((entry && entry.trainer) || '').trim(),
+    });
+  }
+  rosterPut(roster);
+}
+
+function ensureRosterDatalist() {
+  let dl = document.getElementById('roster-names');
+  if (!dl) {
+    dl = el('datalist', { id: 'roster-names' });
+    document.body.appendChild(dl);
+  }
+  dl.innerHTML = '';
+  for (const r of roster) dl.appendChild(el('option', { value: r.name }));
+  return dl;
+}
+
+function rosterField(labelText, id, value, fields, extra = {}) {
+  const input = el('input', { type: 'text', id, value, list: 'roster-names', autocomplete: 'off', ...extra });
+  const fill = () => {
+    const r = rosterFind(input.value);
+    if (!r) return;
+    for (const [fid, prop] of Object.entries(fields)) {
+      const n = document.getElementById(fid);
+      if (n && !n.value) n.value = r[prop] || '';
+    }
+  };
+  input.addEventListener('input', fill);
+  input.addEventListener('change', fill);
+  return el('label', { class: 'field' }, [el('span', { class: 'field-label' }, [labelText]), input]);
+}
+
 /* ============================== Helpers ============================== */
 
 function el(tag, attrs = {}, children = []) {
@@ -218,6 +313,7 @@ function newEval() {
     createdAt: new Date().toISOString(),
     driverName: '',
     driverId: '',
+    warehouse: '',
     evalDate: todayISO(),
     assessor: '',
     areas,
@@ -280,12 +376,14 @@ function renderEvaluate() {
   if (!current) current = newEval();
   const view = document.getElementById('view');
   view.innerHTML = '';
+  ensureRosterDatalist();
   const form = el('form', { id: 'eval-form' });
 
   form.appendChild(el('section', { class: 'card info-card' }, [
     el('h2', { class: 'card-title' }, ['Driver Information']),
-    field('Driver Name', 'driverName', 'text', current.driverName, { required: true }),
-    field('Driver ID#', 'driverId', 'text', current.driverId),
+    rosterField('Driver Name', 'driverName', current.driverName, { driverId: 'license', warehouse: 'warehouse', assessor: 'trainer' }, { required: true }),
+    field('Driver ID# / Lic.#', 'driverId', 'text', current.driverId),
+    field('Warehouse / Location', 'warehouse', 'text', current.warehouse),
     field('Evaluation Date', 'evalDate', 'date', current.evalDate, { required: true }),
     field('Assessor / Trainer', 'assessor', 'text', current.assessor),
   ]));
@@ -385,6 +483,7 @@ function updateProgress() {
 function saveEval() {
   current.driverName = formValue('driverName');
   current.driverId = formValue('driverId');
+  current.warehouse = formValue('warehouse');
   current.evalDate = formValue('evalDate');
   current.assessor = formValue('assessor');
   const sigDate = document.getElementById('sigDate');
@@ -403,6 +502,7 @@ function saveEval() {
   else records.push(JSON.parse(JSON.stringify(current)));
 
   persist();
+  rosterUpsert({ name: current.driverName, license: current.driverId, warehouse: current.warehouse, trainer: current.assessor });
   toast('Saved' + (niCount ? ' – ' + niCount + ' item(s) marked Needs Improvement' : '') + '.');
   current = null;
   renderEvaluate();
@@ -566,7 +666,9 @@ function reportHtml(r, mode) {
     '<td class="lbl">DRIVER NAME</td><td>' + esc(r.driverName) + '</td>' +
     '<td class="lbl">DRIVER ID#</td><td>' + esc(r.driverId) + '</td></tr><tr>' +
     '<td class="lbl">EVALUATION DATE</td><td>' + esc(r.evalDate) + '</td>' +
-    '<td class="lbl">ASSESSOR / TRAINER</td><td>' + esc(r.assessor) + '</td></tr></table>' +
+    '<td class="lbl">ASSESSOR / TRAINER</td><td>' + esc(r.assessor) + '</td></tr>' +
+    (r.warehouse ? '<tr><td class="lbl">WAREHOUSE / LOCATION</td><td>' + esc(r.warehouse) + '</td></tr>' : '') +
+    '</table>' +
     areas +
     '<div class="overall"><h3>Overall Performance Notes / Coaching Points</h3><p>' + (r.overallNotes ? esc(r.overallNotes) : '&nbsp;') + '</p></div>' +
     '<table class="sigs"><tr>' +
