@@ -165,6 +165,9 @@ async function initStorage() {
     const legacy = loadRecords();
     if (legacy.length) { records = legacy; await persist(); }
   }
+  // Load the shared roster. Without this `roster` stays [] and any rosterUpsert
+  // would overwrite the whole shared roster with a partial record.
+  roster = await rosterGet();
 }
 
 /* ============================== Driver Roster (shared) ============================== */
@@ -270,9 +273,12 @@ function el(tag, attrs = {}, children = []) {
     if (k === 'dataset') Object.assign(node.dataset, v);
     else if (k === 'html') node.innerHTML = v;
     else if (k.startsWith('on') && typeof v === 'function') node.addEventListener(k.slice(2), v);
-    else node.setAttribute(k, v);
+    else if (v !== undefined && v !== null) node.setAttribute(k, v);
   }
-  for (const c of children) node.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
+  for (const c of children) {
+    if (c === null || c === undefined) continue;
+    node.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
+  }
   return node;
 }
 
@@ -578,7 +584,7 @@ function deleteEval(id) {
 }
 
 function exportOne(r) {
-  download('eval-' + (r.driverName.replace(/\s+/g, '_') || 'driver') + '-' + (r.evalDate || 'nodate') + '.json', JSON.stringify(r, null, 2));
+  download('eval-' + (String(r.driverName || 'driver').replace(/\s+/g, '_') || 'driver') + '-' + (r.evalDate || 'nodate') + '.json', JSON.stringify(r, null, 2));
 }
 
 function exportAll() {
