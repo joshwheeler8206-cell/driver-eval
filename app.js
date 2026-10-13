@@ -477,6 +477,9 @@ function newEval() {
     driverName: '',
     driverId: '',
     warehouse: '',
+    hireDate: '',
+    licenseExp: '',
+    medCardExp: '',
     evalDate: todayISO(),
     assessor: '',
     areas,
@@ -544,9 +547,12 @@ function renderEvaluate() {
 
   form.appendChild(el('section', { class: 'card info-card' }, [
     el('h2', { class: 'card-title' }, ['Driver Information']),
-    rosterField('Driver Name', 'driverName', current.driverName, { driverId: 'license', warehouse: 'warehouse', assessor: 'trainer' }, { required: true }),
+    rosterField('Driver Name', 'driverName', current.driverName, { driverId: 'license', warehouse: 'warehouse', assessor: 'trainer', hireDate: 'hireDate', licenseExp: 'licenseExp', medCardExp: 'medCardExp' }, { required: true }),
     field('Driver ID# / Lic.#', 'driverId', 'text', current.driverId),
     field('Warehouse / Location', 'warehouse', 'text', current.warehouse),
+    dateField('Hire Date', 'hireDate', current.hireDate),
+    dateField('Licence Expiration', 'licenseExp', current.licenseExp),
+    dateField('Med Card Expiration', 'medCardExp', current.medCardExp),
     field('Evaluation Date', 'evalDate', 'date', current.evalDate, { required: true }),
     field('Assessor / Trainer', 'assessor', 'text', current.assessor),
   ]));
@@ -647,6 +653,9 @@ function saveEval() {
   current.driverName = formValue('driverName');
   current.driverId = formValue('driverId');
   current.warehouse = formValue('warehouse');
+  current.hireDate = formValue('hireDate');
+  current.licenseExp = formValue('licenseExp');
+  current.medCardExp = formValue('medCardExp');
   current.evalDate = formValue('evalDate');
   current.assessor = formValue('assessor');
   const sigDate = document.getElementById('sigDate');
@@ -657,6 +666,9 @@ function saveEval() {
 
   current.driverSig = current._sigDriver ? current._sigDriver.get() : null;
   current.assessorSig = current._sigAssessor ? current._sigAssessor.get() : null;
+  // the pads themselves are live DOM handles — keep them out of the stored record
+  delete current._sigDriver;
+  delete current._sigAssessor;
 
   const niCount = countNI(current);
 
@@ -665,7 +677,7 @@ function saveEval() {
   else records.push(JSON.parse(JSON.stringify(current)));
 
   persist();
-  rosterUpsert({ name: current.driverName, license: current.driverId, warehouse: current.warehouse, trainer: current.assessor });
+  rosterUpsert({ name: current.driverName, license: current.driverId, warehouse: current.warehouse, trainer: current.assessor, hireDate: current.hireDate, licenseExp: current.licenseExp, medCardExp: current.medCardExp });
   toast('Saved' + (niCount ? ' – ' + niCount + ' item(s) marked Needs Improvement' : '') + '.');
   current = null;
   renderEvaluate();
@@ -869,6 +881,10 @@ function reportHtml(r, mode) {
     '<td class="lbl">EVALUATION DATE</td><td>' + esc(r.evalDate) + '</td>' +
     '<td class="lbl">ASSESSOR / TRAINER</td><td>' + esc(r.assessor) + '</td></tr>' +
     (r.warehouse ? '<tr><td class="lbl">WAREHOUSE / LOCATION</td><td>' + esc(r.warehouse) + '</td></tr>' : '') +
+    (r.hireDate || r.licenseExp || r.medCardExp ? '<tr>' +
+      '<td class="lbl">HIRE DATE</td><td>' + esc(r.hireDate || '\u2013') + '</td>' +
+      '<td class="lbl">LICENCE EXPIRATION</td><td>' + esc(r.licenseExp || '\u2013') + '</td></tr>' +
+      '<tr><td class="lbl">MED CARD EXPIRATION</td><td colspan="3">' + esc(r.medCardExp || '\u2013') + '</td></tr>' : '') +
     '</table>' +
     areas +
     '<div class="overall"><h3>Overall Performance Notes / Coaching Points</h3><p>' + (r.overallNotes ? esc(r.overallNotes) : '&nbsp;') + '</p></div>' +
